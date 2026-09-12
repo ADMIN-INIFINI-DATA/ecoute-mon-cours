@@ -32,7 +32,7 @@ import com.infinidata.ecoutemoncours.ui.theme.LocalSkin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReaderScreen(docId: Long, onBack: () -> Unit) {
+fun ReaderScreen(docId: Long, onBack: () -> Unit, onEdit: () -> Unit) {
     val vm: ReaderViewModel = viewModel()
     val ui by vm.ui.collectAsState()
     val speech by vm.speech.collectAsState()
@@ -71,6 +71,9 @@ fun ReaderScreen(docId: Long, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") }
                 },
                 actions = {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "Corriger le texte")
+                    }
                     IconButton(onClick = { showSheet = true }) {
                         Icon(Icons.Default.Summarize, contentDescription = "Fiche de révision")
                     }

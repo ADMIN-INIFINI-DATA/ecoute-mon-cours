@@ -47,6 +47,15 @@ object Importer {
             return Imported(TextCleanup.clean(local.text), "scan", "local")
         }
 
+        // Page pale, crayon a papier, photo de tableau : on redresse le contraste
+        // et on relit. C'est ce qui sauve la majorite des documents scolaires.
+        val enhanced = enhancedPass(context, uri)
+        val best = listOfNotNull(local, enhanced)
+            .maxByOrNull { ImageEnhancer.score(it.text) }
+        if (best != null && !best.looksUnreliable) {
+            return Imported(TextCleanup.clean(best.text), "scan", "local")
+        }
+
         // Page manuscrite ou photo difficile : bascule cloud si elle est autorisee.
         if (settings.cloudOcrEnabled && settings.hasGeminiKey) {
             val cloud = runCatching { GeminiClient(settings.geminiKey).transcribeImage(context, uri) }
@@ -54,19 +63,32 @@ object Importer {
                 return Imported(TextCleanup.clean(it), "scan", "cloud")
             }
             return Imported(
-                TextCleanup.clean(local?.text.orEmpty()), "scan", "local",
+                TextCleanup.clean(best?.text.orEmpty()), "scan", "local",
                 warning = "La lecture assistée a échoué : " + (cloud.exceptionOrNull()?.message ?: "raison inconnue")
             )
         }
 
         return Imported(
-            text = TextCleanup.clean(local?.text.orEmpty()),
+            text = TextCleanup.clean(best?.text.orEmpty()),
             source = "scan",
             engine = "local",
-            warning = if (local == null || local.looksUnreliable)
-                "Peu de texte lisible sur cette image. Si la page est manuscrite, active la lecture assistée dans Réglages."
+            warning = if (best == null || best.looksUnreliable)
+                "Peu de texte lisible, même après renforcement du contraste. " +
+                    "Si la page est manuscrite ou très pâle, active la lecture assistée dans Réglages."
             else null
         )
+    }
+
+    /** Relecture de l'image apres passage en noir et blanc a seuil adaptatif. */
+    private suspend fun enhancedPass(context: Context, uri: Uri): OcrResult? = withContext(Dispatchers.IO) {
+        runCatching {
+            val source = ImageEnhancer.load(context, uri) ?: return@runCatching null
+            val cleaned = ImageEnhancer.enhance(source)
+            source.recycle()
+            val result = MlKitOcr.recognize(cleaned)
+            cleaned.recycle()
+            result
+        }.getOrNull()
     }
 
     private suspend fun readPlainText(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {

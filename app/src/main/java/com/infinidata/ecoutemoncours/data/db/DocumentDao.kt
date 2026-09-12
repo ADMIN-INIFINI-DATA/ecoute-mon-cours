@@ -35,4 +35,15 @@ interface DocumentDao {
 
     @Query("UPDATE documents SET title = :title, subject = :subject WHERE id = :id")
     suspend fun rename(id: Long, title: String, subject: String)
+
+    /** Edition du cours : le texte corrige remplace celui de la reconnaissance. */
+    @Query(
+        "UPDATE documents SET title = :title, subject = :subject, text = :text, " +
+            "charCount = :charCount, resumeOffset = :resumeOffset, summary = NULL, " +
+            "lastOpenedAt = :updatedAt WHERE id = :id"
+    )
+    suspend fun updateContent(
+        id: Long, title: String, subject: String, text: String, charCount: Int, resumeOffset: Int,
+        updatedAt: Long = System.currentTimeMillis()
+    )
 }

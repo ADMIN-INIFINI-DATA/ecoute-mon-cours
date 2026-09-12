@@ -46,7 +46,9 @@ fun LibraryScreen(
     vm: MainViewModel,
     onOpen: (Long) -> Unit,
     onSettings: () -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    onProfile: () -> Unit,
+    onWrite: () -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -86,7 +88,16 @@ fun LibraryScreen(
             modifier = Modifier.padding(padding).fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
         ) {
-            item { Greeting(documents, onSettings, onSearch) }
+            item {
+                Greeting(
+                    documents = documents,
+                    name = vm.settings.profileName,
+                    avatar = vm.settings.avatarEmoji,
+                    onProfile = onProfile,
+                    onSettings = onSettings,
+                    onSearch = onSearch
+                )
+            }
             item { SkinRow(vm) }
 
             if (importState.busy) {
@@ -136,7 +147,8 @@ fun LibraryScreen(
                             )
                         )
                     },
-                    onSearch = onSearch
+                    onSearch = onSearch,
+                    onWrite = onWrite
                 )
             }
 
@@ -161,7 +173,14 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun Greeting(documents: List<DocumentEntity>, onSettings: () -> Unit, onSearch: () -> Unit) {
+private fun Greeting(
+    documents: List<DocumentEntity>,
+    name: String,
+    avatar: String,
+    onProfile: () -> Unit,
+    onSettings: () -> Unit,
+    onSearch: () -> Unit
+) {
     val skin = LocalSkin.current
     val minutes = documents.sumOf { (it.charCount / 900).coerceAtLeast(1) }
     Row(
@@ -169,7 +188,10 @@ private fun Greeting(documents: List<DocumentEntity>, onSettings: () -> Unit, on
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Salut 👋", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                if (name.isBlank()) "Salut 👋" else "Salut $name 👋",
+                style = MaterialTheme.typography.headlineSmall
+            )
             Spacer(Modifier.height(4.dp))
             Text(
                 if (documents.isEmpty()) "Prête à transformer un cours en audio ?"
@@ -181,11 +203,15 @@ private fun Greeting(documents: List<DocumentEntity>, onSettings: () -> Unit, on
         IconButton(onClick = onSearch) {
             Icon(Icons.Default.Search, "Chercher un cours", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        IconButton(onClick = onSettings) {
+            Icon(Icons.Default.Settings, "Réglages", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // L'avatar ouvre le profil : prenom, tete, code.
         Box(
-            Modifier.size(44.dp).clip(CircleShape).background(skin.gradient).clickable(onClick = onSettings),
+            Modifier.size(46.dp).clip(CircleShape).background(skin.gradient).clickable(onClick = onProfile),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Settings, "Réglages", tint = skin.onAccent)
+            Text(avatar, fontSize = 22.sp)
         }
     }
 }
@@ -230,7 +256,8 @@ private fun ImportTiles(
     onScan: () -> Unit,
     onPhoto: () -> Unit,
     onFile: () -> Unit,
-    onSearch: () -> Unit
+    onSearch: () -> Unit,
+    onWrite: () -> Unit
 ) {
     val skin = LocalSkin.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -258,7 +285,10 @@ private fun ImportTiles(
             SmallTile("🖼️", "Une photo", "Depuis la galerie", Modifier.weight(1f), onPhoto)
             SmallTile("📄", "Un fichier", "PDF, Word, texte", Modifier.weight(1f), onFile)
         }
-        SmallTile("🔎", "Chercher en ligne", "Par matière et par niveau", Modifier.fillMaxWidth(), onSearch)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SmallTile("✍️", "Écrire", "Taper ou coller un cours", Modifier.weight(1f), onWrite)
+            SmallTile("🔎", "Chercher", "Par matière et niveau", Modifier.weight(1f), onSearch)
+        }
     }
 }
 

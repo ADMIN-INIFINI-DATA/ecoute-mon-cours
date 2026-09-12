@@ -41,7 +41,18 @@ object PdfImporter {
                         bmp.eraseColor(Color.WHITE)
                         page.render(bmp, null, Matrix().apply { setScale(scale, scale) },
                             PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        val result = MlKitOcr.recognize(bmp)
+                        var result = MlKitOcr.recognize(bmp)
+                        // Page scannee palie : seconde lecture apres renforcement du contraste.
+                        if (result.looksUnreliable) {
+                            val enhanced = runCatching { ImageEnhancer.enhance(bmp) }.getOrNull()
+                            if (enhanced != null) {
+                                val second = runCatching { MlKitOcr.recognize(enhanced) }.getOrNull()
+                                enhanced.recycle()
+                                if (second != null &&
+                                    ImageEnhancer.score(second.text) > ImageEnhancer.score(result.text)
+                                ) result = second
+                            }
+                        }
                         bmp.recycle()
                         sb.append(result.text).append("\n\n")
                     }

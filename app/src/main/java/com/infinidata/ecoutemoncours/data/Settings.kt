@@ -64,6 +64,25 @@ class Settings(context: Context) {
         get() = readSkinId(appContext)
         set(v) = plainPrefs(appContext).edit().putString(KEY_SKIN, v).apply()
 
+    /** Profil local : prenom et avatar. Stockes en clair, ce ne sont pas des secrets. */
+    var profileName: String
+        get() = plainPrefs(appContext).getString(KEY_NAME, "").orEmpty()
+        set(v) = plainPrefs(appContext).edit().putString(KEY_NAME, v.trim()).apply()
+
+    var avatarEmoji: String
+        get() = plainPrefs(appContext).getString(KEY_AVATAR, "🎧").orEmpty().ifBlank { "🎧" }
+        set(v) = plainPrefs(appContext).edit().putString(KEY_AVATAR, v).apply()
+
+    /** Code a 4 chiffres facultatif, chiffre par le Keystore. Verrou local uniquement :
+     *  il n'ouvre aucun compte et ne quitte jamais le telephone. */
+    var pinCode: String
+        get() = prefs.getString(KEY_PIN, "").orEmpty()
+        set(v) = prefs.edit().putString(KEY_PIN, v).apply()
+
+    val hasPin: Boolean get() = pinCode.length == 4
+
+    val isProfileReady: Boolean get() = profileName.isNotBlank()
+
     var cloudOcrEnabled: Boolean
         get() = prefs.getBoolean(KEY_CLOUD_OCR, false)
         set(v) = prefs.edit().putBoolean(KEY_CLOUD_OCR, v).apply()
@@ -88,5 +107,8 @@ class Settings(context: Context) {
         private const val KEY_FONT = "font_scale"
         private const val KEY_CLOUD_OCR = "cloud_ocr"
         private const val KEY_SKIN = "skin"
+        private const val KEY_NAME = "profile_name"
+        private const val KEY_AVATAR = "profile_avatar"
+        private const val KEY_PIN = "pin_code"
     }
 }

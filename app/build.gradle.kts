@@ -80,6 +80,7 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.exifinterface)
 
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.mlkit.text.recognition)
