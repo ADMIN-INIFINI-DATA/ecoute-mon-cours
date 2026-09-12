@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Écoute mon cours</string>
+    <string name="channel_playback">Lecture en cours</string>
+</resources>
