@@ -20,7 +20,11 @@ data class ReaderUiState(
     val paragraphs: List<Pair<Int, String>> = emptyList(),  // offset absolu -> texte
     val busyMessage: String? = null,
     val message: String? = null,
-    val sheet: String? = null
+    val sheet: String? = null,
+    /** Etat propre a la feuille de revision : elle recouvre l'ecran, donc ni la
+     *  barre de progression ni le snackbar du dessous ne sont visibles. */
+    val sheetBusy: Boolean = false,
+    val sheetError: String? = null
 )
 
 class ReaderViewModel : ViewModel() {
@@ -100,24 +104,39 @@ class ReaderViewModel : ViewModel() {
 
     fun buildRevisionSheet() {
         val doc = _ui.value.doc ?: return
+        if (_ui.value.sheetBusy) return
         if (!settings.hasGeminiKey) {
-            _ui.value = _ui.value.copy(message = "Ajoute une clé IA dans Réglages pour générer une fiche.")
+            _ui.value = _ui.value.copy(
+                sheetError = "Aucune clé IA enregistrée. Réglages → Lecture assistée, " +
+                    "puis « Tester la connexion IA » pour vérifier qu'elle fonctionne."
+            )
+            return
+        }
+        if (doc.text.length < 200) {
+            _ui.value = _ui.value.copy(
+                sheetError = "Ce cours est trop court pour en tirer une fiche."
+            )
             return
         }
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(busyMessage = "Rédaction de la fiche de révision…")
+            _ui.value = _ui.value.copy(sheetBusy = true, sheetError = null)
             runCatching {
                 withContext(Dispatchers.IO) {
                     Importer.geminiClient(settings).revisionSheet(doc.text, doc.subject)
                 }
             }.onSuccess { sheet ->
                 dao.saveSummary(doc.id, sheet)
-                _ui.value = _ui.value.copy(busyMessage = null, sheet = sheet)
+                _ui.value = _ui.value.copy(sheetBusy = false, sheet = sheet, sheetError = null)
             }.onFailure { e ->
-                _ui.value = _ui.value.copy(busyMessage = null, message = e.message)
+                _ui.value = _ui.value.copy(
+                    sheetBusy = false,
+                    sheetError = e.message ?: "La rédaction de la fiche a échoué."
+                )
             }
         }
     }
+
+    fun clearSheetError() { _ui.value = _ui.value.copy(sheetError = null) }
 
     /** Lit la fiche a voix haute au lieu du cours entier. */
     fun playSheet() {

@@ -145,7 +145,7 @@ class GeminiClient(private val apiKey: String, private val model: String = DEFAU
             .put("contents", JSONArray().put(JSONObject().put("parts", parts)))
             .put(
                 "generationConfig",
-                JSONObject().put("temperature", 0.2).put("maxOutputTokens", 4096)
+                JSONObject().put("temperature", 0.2).put("maxOutputTokens", 8192)
             )
 
         val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
@@ -170,15 +170,35 @@ class GeminiClient(private val apiKey: String, private val model: String = DEFAU
             conn.disconnect()
         }
 
-        val candidates = JSONObject(payload).optJSONArray("candidates")
-            ?: throw IllegalStateException("Réponse vide du service IA.")
-        if (candidates.length() == 0) throw IllegalStateException("Réponse vide du service IA.")
-        val partsOut = candidates.getJSONObject(0)
-            .optJSONObject("content")?.optJSONArray("parts")
-            ?: throw IllegalStateException("Réponse inattendue du service IA.")
+        val root = JSONObject(payload)
+
+        // Un refus de securite n'est pas une reponse vide : il faut le dire clairement,
+        // sinon l'utilisatrice voit « erreur inattendue » sans rien pouvoir en faire.
+        root.optJSONObject("promptFeedback")?.optString("blockReason")?.takeIf { it.isNotBlank() }
+            ?.let { throw IllegalStateException("Le service IA a refusé de traiter ce cours (motif : $it).") }
+
+        val candidates = root.optJSONArray("candidates")
+        if (candidates == null || candidates.length() == 0) {
+            throw IllegalStateException("Le service IA n'a rien renvoyé pour ce cours.")
+        }
+        val candidate = candidates.getJSONObject(0)
+        val partsOut = candidate.optJSONObject("content")?.optJSONArray("parts")
         val sb = StringBuilder()
-        for (i in 0 until partsOut.length()) sb.append(partsOut.getJSONObject(i).optString("text"))
-        return sb.toString().trim()
+        for (i in 0 until (partsOut?.length() ?: 0)) {
+            sb.append(partsOut!!.getJSONObject(i).optString("text"))
+        }
+        val text = sb.toString().trim()
+        if (text.isEmpty()) {
+            val reason = candidate.optString("finishReason").ifBlank { "inconnue" }
+            throw IllegalStateException(
+                when (reason) {
+                    "MAX_TOKENS" -> "Le cours est trop long pour une fiche en une seule fois."
+                    "SAFETY" -> "Le service IA a bloqué sa réponse sur ce contenu."
+                    else -> "Réponse vide du service IA (motif : $reason)."
+                }
+            )
+        }
+        return text
     }
 
     private fun friendlyError(code: Int, body: String): String = when (code) {

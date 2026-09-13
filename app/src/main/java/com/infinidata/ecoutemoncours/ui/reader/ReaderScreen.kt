@@ -155,7 +155,7 @@ fun ReaderScreen(docId: Long, onBack: () -> Unit, onEdit: () -> Unit) {
 
     if (showSheet) {
         ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
+            onDismissRequest = { if (!ui.sheetBusy) { showSheet = false; vm.clearSheetError() } },
             containerColor = MaterialTheme.colorScheme.surface
         ) {
             Column(
@@ -163,24 +163,61 @@ fun ReaderScreen(docId: Long, onBack: () -> Unit, onEdit: () -> Unit) {
             ) {
                 Text("Fiche de révision", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(12.dp))
-                if (ui.sheet.isNullOrBlank()) {
+                if (ui.sheetBusy) {
+                    // Tout se joue ici : la feuille couvre l'ecran, donc c'est elle
+                    // qui doit montrer l'attente et les erreurs.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            strokeWidth = 3.dp,
+                            color = skin.accent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            "Lecture du cours et rédaction de la fiche… " +
+                                "Compte une dizaine de secondes.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else if (ui.sheet.isNullOrBlank()) {
                     Text(
-                        "Génère une fiche à partir du cours : l'essentiel, les définitions, " +
-                            "ce qu'il faut retenir par cœur et des questions pour se tester.",
+                        "L'essentiel du cours, les définitions, ce qu'il faut retenir par cœur " +
+                            "et six questions pour se tester. La fiche s'écoute aussi.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    ui.sheetError?.let { err ->
+                        Spacer(Modifier.height(14.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                err,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(16.dp))
                     Button(
                         onClick = { vm.buildRevisionSheet() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) { Text("Créer la fiche") }
+                        colors = ButtonDefaults.buttonColors(containerColor = skin.accent)
+                    ) { Text(if (ui.sheetError != null) "Réessayer" else "Créer la fiche") }
                 } else {
                     Text(ui.sheet.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+                    ui.sheetError?.let { err ->
+                        Spacer(Modifier.height(12.dp))
+                        Text(err, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = { vm.playSheet(); showSheet = false },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            colors = ButtonDefaults.buttonColors(containerColor = skin.accent)
                         ) { Text("Écouter la fiche") }
                         OutlinedButton(onClick = { vm.buildRevisionSheet() }) { Text("Regénérer") }
                     }
