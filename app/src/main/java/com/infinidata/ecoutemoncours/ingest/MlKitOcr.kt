@@ -78,6 +78,43 @@ object MlKitOcr {
 }
 
 data class OcrResult(val text: String, val confidence: Float) {
-    /** En dessous de ce seuil, la page est probablement manuscrite ou illisible. */
-    val looksUnreliable: Boolean get() = text.trim().length < 40 || confidence < 0.55f
+
+    /**
+     * Vrai quand le texte reconnu n'a pas l'air d'etre du francais.
+     *
+     * Le piege du manuscrit : le modele ne renvoie pas une page vide, il renvoie du
+     * charabia plausible — des suites de lettres de bonne longueur, avec un fort taux
+     * alphabetique. Compter les caracteres ne suffit donc pas ; on cherche des mots
+     * outils francais, qui representent normalement un mot sur cinq dans un cours.
+     */
+    val looksUnreliable: Boolean
+        get() {
+            val clean = text.trim()
+            if (clean.length < 40 || confidence < 0.55f) return true
+
+            val words = clean.lowercase()
+                .split(Regex("[^\\p{L}']+"))
+                .filter { it.isNotBlank() }
+            if (words.size < 12) return true
+
+            val stopWords = words.count { it in FRENCH_STOP_WORDS }
+            // Les tokens d'une ou deux lettres sont ecartes : dans un enonce de maths,
+            // « f de x » en produit beaucoup sans que la lecture soit fausse.
+            val long = words.filter { it.length > 2 }
+            val withVowel = long.count { w -> w.any { it in "aeiouyàâéèêëîïôöûüù" } }
+
+            // Les DEUX signaux doivent etre au rouge : une liste de vocabulaire manque
+            // de mots outils sans etre du charabia, et le charabia manque des deux.
+            return stopWords * 20 < words.size && withVowel * 5 < long.size * 4
+        }
+
+    private companion object {
+        val FRENCH_STOP_WORDS = setOf(
+            "le", "la", "les", "un", "une", "des", "de", "du", "et", "est", "en", "dans",
+            "qui", "que", "pour", "par", "sur", "au", "aux", "ce", "cette", "ces", "il",
+            "elle", "on", "nous", "vous", "ils", "elles", "son", "sa", "ses", "leur",
+            "plus", "pas", "ne", "se", "sont", "a", "ont", "avec", "comme", "mais", "ou",
+            "où", "donc", "car", "si", "tout", "toute", "entre", "aussi", "peut", "être"
+        )
+    }
 }

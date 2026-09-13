@@ -55,7 +55,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true   // expose VERSION_NAME et VERSION_CODE a l'ecran Reglages
+    }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }

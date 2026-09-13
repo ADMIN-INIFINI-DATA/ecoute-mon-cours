@@ -17,6 +17,54 @@ import java.net.URL
  */
 class GeminiClient(private val apiKey: String, private val model: String = DEFAULT_MODEL) {
 
+    /** Le nom du modele qui a repondu, utile pour diagnostiquer. */
+    var lastModelUsed: String = model
+        private set
+
+    /**
+     * Modeles que CETTE cle peut reellement utiliser, demandes au service.
+     * C'est la seule source de verite : les noms codes en dur vieillissent en quelques mois.
+     */
+    suspend fun listUsableModels(): List<String> = withContext(Dispatchers.IO) {
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            // En-tete plutot que parametre d'URL : certains messages d'erreur reprennent
+            // l'URL complete, et ce rapport est affiche a l'ecran des Reglages.
+            setRequestProperty("x-goog-api-key", apiKey)
+        }
+        val payload = try {
+            val code = conn.responseCode
+            if (code in 200..299) conn.inputStream.bufferedReader().use { it.readText() }
+            else throw IllegalStateException(
+                friendlyError(code, conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty())
+            )
+        } finally {
+            conn.disconnect()
+        }
+
+        val models = JSONObject(payload).optJSONArray("models") ?: return@withContext emptyList()
+        val usable = ArrayList<String>()
+        for (i in 0 until models.length()) {
+            val m = models.getJSONObject(i)
+            val methods = m.optJSONArray("supportedGenerationMethods")
+            val supportsGenerate = (0 until (methods?.length() ?: 0))
+                .any { methods!!.getString(it) == "generateContent" }
+            if (supportsGenerate) usable.add(m.optString("name").removePrefix("models/"))
+        }
+        // Les « flash » d'abord (rapides, les moins chers pour lire une page), puis la
+        // version la plus recente. Un tri alphabetique ferait ressortir gemini-2.0, ferme.
+        usable.filterNot { EXCLUDED_VARIANTS.containsMatchIn(it) }
+            .sortedWith(
+                compareByDescending<String> { it.contains("flash") }
+                    .thenByDescending { VERSION_IN_NAME.find(it)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0 }
+                    .thenBy { it.contains("lite") }
+                    .thenBy { it.length }
+            )
+    }
+
     suspend fun transcribeImage(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: error("Image illisible")
@@ -69,7 +117,30 @@ class GeminiClient(private val apiKey: String, private val model: String = DEFAU
         request(JSONArray().put(JSONObject().put("text", prompt)))
     }
 
+    /**
+     * Les modeles Gemini sont retires au bout de quelques mois : on essaie la liste
+     * dans l'ordre et on passe au suivant si celui-ci n'existe plus (404).
+     */
     private fun request(parts: JSONArray): String {
+        var lastError: IllegalStateException? = null
+        for (candidate in listOf(model) + FALLBACK_MODELS.filterNot { it == model }) {
+            try {
+                val answer = requestWith(candidate, parts)
+                lastModelUsed = candidate
+                return answer
+            } catch (e: IllegalStateException) {
+                lastError = e
+                if (e.message?.contains("modèle", ignoreCase = true) != true) throw e
+            }
+        }
+        // Aucun modele de la liste n'existe plus : le message interne ne doit pas
+        // remonter tel quel a l'utilisatrice.
+        throw IllegalStateException(
+            "Le service IA a changé de modèles. Une mise à jour de l'application est nécessaire."
+        ).also { if (lastError != null) it.initCause(lastError) }
+    }
+
+    private fun requestWith(model: String, parts: JSONArray): String {
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", parts)))
             .put(
@@ -77,13 +148,14 @@ class GeminiClient(private val apiKey: String, private val model: String = DEFAU
                 JSONObject().put("temperature", 0.2).put("maxOutputTokens", 4096)
             )
 
-        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
+        val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 20_000
             readTimeout = 120_000
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("x-goog-api-key", apiKey)
         }
         val payload = try {
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -112,12 +184,24 @@ class GeminiClient(private val apiKey: String, private val model: String = DEFAU
     private fun friendlyError(code: Int, body: String): String = when (code) {
         400 -> "Requête refusée par le service IA (clé invalide ou image trop lourde)."
         401, 403 -> "Clé API refusée. Vérifie-la dans Réglages."
+        404 -> "modèle indisponible"   // declenche l'essai du modele suivant
         429 -> "Quota IA atteint pour le moment. Réessaie dans quelques minutes."
         in 500..599 -> "Le service IA est indisponible. Réessaie plus tard."
         else -> "Erreur du service IA ($code). ${body.take(160)}"
     }
 
     companion object {
-        const val DEFAULT_MODEL = "gemini-2.0-flash"
+        /** Variantes qui ne transcrivent pas du texte : elles repondraient 200 en
+         *  renvoyant autre chose, donc une erreur incomprehensible pour l'utilisatrice. */
+        private val EXCLUDED_VARIANTS = Regex("tts|image|audio|embedding|live")
+        private val VERSION_IN_NAME = Regex("gemini-(\\d+(?:\\.\\d+)?)")
+
+        // Google retire ses modeles regulierement ; le premier qui repond est retenu.
+        const val DEFAULT_MODEL = "gemini-3.5-flash"
+        val FALLBACK_MODELS = listOf(
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash"
+        )
     }
 }

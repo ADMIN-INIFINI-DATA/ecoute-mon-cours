@@ -17,5 +17,7 @@ data class DocumentEntity(
     val resumeOffset: Int = 0,
     val summary: String? = null,
     val ocrEngine: String = "local",      // local | cloud
-    val attribution: String? = null       // licence / source pour les contenus web
+    val attribution: String? = null,      // licence / source pour les contenus web
+    /** Chemins des pages scannees, conservees pour pouvoir relire avec l'IA. */
+    val imagePaths: String? = null
 )

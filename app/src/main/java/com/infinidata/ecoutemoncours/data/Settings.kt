@@ -83,6 +83,11 @@ class Settings(context: Context) {
 
     val isProfileReady: Boolean get() = profileName.isNotBlank()
 
+    /** Modele IA retenu apres le test de connexion. Vide = liste par defaut. */
+    var aiModel: String
+        get() = plainPrefs(appContext).getString(KEY_MODEL, "").orEmpty()
+        set(v) = plainPrefs(appContext).edit().putString(KEY_MODEL, v).apply()
+
     var cloudOcrEnabled: Boolean
         get() = prefs.getBoolean(KEY_CLOUD_OCR, false)
         set(v) = prefs.edit().putBoolean(KEY_CLOUD_OCR, v).apply()
@@ -110,5 +115,6 @@ class Settings(context: Context) {
         private const val KEY_NAME = "profile_name"
         private const val KEY_AVATAR = "profile_avatar"
         private const val KEY_PIN = "pin_code"
+        private const val KEY_MODEL = "ai_model"
     }
 }

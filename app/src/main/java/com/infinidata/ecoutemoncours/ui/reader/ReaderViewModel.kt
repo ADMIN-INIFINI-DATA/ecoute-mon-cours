@@ -4,7 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.infinidata.ecoutemoncours.EcouteApp
-import com.infinidata.ecoutemoncours.ai.GeminiClient
+import com.infinidata.ecoutemoncours.ingest.Importer
 import com.infinidata.ecoutemoncours.data.db.DocumentEntity
 import com.infinidata.ecoutemoncours.speech.AudioExporter
 import com.infinidata.ecoutemoncours.speech.SpeechController
@@ -59,6 +59,45 @@ class ReaderViewModel : ViewModel() {
     fun seek(offset: Int) = SpeechController.seekToOffset(offset)
     fun setRate(rate: Float) = SpeechController.setRate(rate)
 
+    /** Relecture des pages d'origine par l'IA : le recours quand la lecture locale
+     *  a rendu du charabia — typiquement une page manuscrite. */
+    fun reReadWithAi() {
+        val doc = _ui.value.doc ?: return
+        if (!settings.hasGeminiKey) {
+            _ui.value = _ui.value.copy(message = "Ajoute une clé IA dans Réglages pour utiliser la relecture.")
+            return
+        }
+        val pages = doc.imagePaths?.split("\n")?.filter { it.isNotBlank() }.orEmpty()
+        if (pages.isEmpty()) {
+            _ui.value = _ui.value.copy(
+                message = "Ce cours n'a pas de page d'origine à relire (texte importé ou scanné avant la mise à jour)."
+            )
+            return
+        }
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(busyMessage = "Relecture des pages par l'IA…")
+            runCatching {
+                withContext(Dispatchers.IO) { Importer.forceCloud(app, pages, settings) }
+            }.onSuccess { text ->
+                dao.updateContent(
+                    id = doc.id, title = doc.title, subject = doc.subject, text = text,
+                    charCount = text.length, resumeOffset = 0
+                )
+                val refreshed = dao.byId(doc.id)
+                _ui.value = _ui.value.copy(
+                    busyMessage = null,
+                    doc = refreshed,
+                    paragraphs = paragraphize(text),
+                    sheet = null,
+                    message = "Texte relu par l'IA."
+                )
+                refreshed?.let { SpeechController.load(it.id, it.title, it.text, 0) }
+            }.onFailure { e ->
+                _ui.value = _ui.value.copy(busyMessage = null, message = e.message ?: "Relecture impossible.")
+            }
+        }
+    }
+
     fun buildRevisionSheet() {
         val doc = _ui.value.doc ?: return
         if (!settings.hasGeminiKey) {
@@ -69,7 +108,7 @@ class ReaderViewModel : ViewModel() {
             _ui.value = _ui.value.copy(busyMessage = "Rédaction de la fiche de révision…")
             runCatching {
                 withContext(Dispatchers.IO) {
-                    GeminiClient(settings.geminiKey).revisionSheet(doc.text, doc.subject)
+                    Importer.geminiClient(settings).revisionSheet(doc.text, doc.subject)
                 }
             }.onSuccess { sheet ->
                 dao.saveSummary(doc.id, sheet)

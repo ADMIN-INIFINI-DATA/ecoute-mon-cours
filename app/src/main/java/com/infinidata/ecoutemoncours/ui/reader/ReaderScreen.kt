@@ -71,6 +71,12 @@ fun ReaderScreen(docId: Long, onBack: () -> Unit, onEdit: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { vm.reReadWithAi() },
+                        enabled = ui.busyMessage == null
+                    ) {
+                        Icon(Icons.Default.AutoFixHigh, contentDescription = "Relire avec l'IA")
+                    }
                     IconButton(onClick = onEdit) {
                         Icon(Icons.Default.Edit, contentDescription = "Corriger le texte")
                     }

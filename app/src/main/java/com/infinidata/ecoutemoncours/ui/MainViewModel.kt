@@ -70,6 +70,7 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             _import.value = ImportUiState(busy = true, step = "Lecture des pages…")
             val sb = StringBuilder()
+            val keptPages = mutableListOf<String>()
             var engine = "local"
             var warning: String? = null
             pages.forEachIndexed { index, uri ->
@@ -77,6 +78,7 @@ class MainViewModel : ViewModel() {
                 runCatching { Importer.import(app, uri, settings) }
                     .onSuccess {
                         sb.append(it.text).append("\n\n")
+                        it.imagePaths?.let { path -> keptPages.add(path) }
                         if (it.engine == "cloud") engine = "cloud"
                         warning = warning ?: it.warning
                     }
@@ -87,7 +89,12 @@ class MainViewModel : ViewModel() {
                 _import.value = ImportUiState(message = warning ?: "Aucun texte lisible sur ces pages.")
             } else {
                 val id = dao.insert(
-                    Importer.toDocument(Importer.Imported(text, "scan", engine))
+                    Importer.toDocument(
+                        Importer.Imported(
+                            text, "scan", engine,
+                            imagePaths = keptPages.joinToString("\n").ifBlank { null }
+                        )
+                    )
                 )
                 _import.value = ImportUiState(lastDocId = id, message = warning)
             }
@@ -96,7 +103,13 @@ class MainViewModel : ViewModel() {
 
     fun clearImport() { _import.value = ImportUiState() }
 
-    fun delete(id: Long) = viewModelScope.launch { dao.delete(id) }
+    fun delete(id: Long) = viewModelScope.launch {
+        // Les pages conservees pour la relecture IA partent avec le cours.
+        dao.byId(id)?.imagePaths?.split("\n")?.forEach { path ->
+            if (path.isNotBlank()) runCatching { java.io.File(path).delete() }
+        }
+        dao.delete(id)
+    }
 
     fun rename(id: Long, title: String, subject: String) =
         viewModelScope.launch { dao.rename(id, title, subject) }

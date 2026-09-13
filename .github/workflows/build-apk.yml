@@ -34,8 +34,23 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           mkdir -p "$RUNNER_TEMP/ks"
-          echo -n "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ks/release.jks"
+          # tr -d : un espace ou un retour a la ligne colle par erreur dans le secret
+          # ne doit pas corrompre le fichier.
+          printf '%s' "$KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/ks/release.jks"
           test -s "$RUNNER_TEMP/ks/release.jks"
+
+      - name: Verification de la cle
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          # Echoue ici, avec un message clair, plutot qu'apres quatre minutes de compilation.
+          if ! keytool -list -keystore "$RUNNER_TEMP/ks/release.jks" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null 2>&1; then
+            echo "::error::Keystore illisible : KEYSTORE_PASSWORD ou KEY_ALIAS incorrect, ou KEYSTORE_BASE64 tronque."
+            exit 1
+          fi
+          echo "Cle de signature valide, alias $KEY_ALIAS."
 
       - name: Build
         env:

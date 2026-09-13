@@ -16,7 +16,32 @@ import kotlinx.coroutines.withContext
  */
 object Importer {
 
-    data class Imported(val text: String, val source: String, val engine: String, val warning: String? = null)
+    data class Imported(
+        val text: String,
+        val source: String,
+        val engine: String,
+        val warning: String? = null,
+        /** Pages conservees (un chemin par ligne), pour une relecture ulterieure. */
+        val imagePaths: String? = null
+    )
+
+    /** Client IA configure avec le modele retenu lors du test de connexion. */
+    fun geminiClient(settings: Settings): GeminiClient =
+        if (settings.aiModel.isNotBlank()) GeminiClient(settings.geminiKey, settings.aiModel)
+        else GeminiClient(settings.geminiKey)
+
+    /** Copie l'image dans le stockage prive de l'application : la photo d'origine
+     *  peut disparaitre (cache vide, permission expiree), la relecture IA non. */
+    suspend fun keepPage(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = java.io.File(context.filesDir, "pages").apply { mkdirs() }
+            val file = java.io.File(dir, "page_${System.currentTimeMillis()}_${(0..999).random()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            } ?: return@runCatching null
+            file.absolutePath
+        }.getOrNull()
+    }
 
     suspend fun import(context: Context, uri: Uri, settings: Settings): Imported {
         val mime = context.contentResolver.getType(uri).orEmpty()
@@ -41,10 +66,11 @@ object Importer {
     }
 
     private suspend fun importImage(context: Context, uri: Uri, settings: Settings): Imported {
+        val kept = keepPage(context, uri)
         val local = runCatching { MlKitOcr.recognizeUri(context, uri) }.getOrNull()
 
         if (local != null && !local.looksUnreliable) {
-            return Imported(TextCleanup.clean(local.text), "scan", "local")
+            return Imported(TextCleanup.clean(local.text), "scan", "local", imagePaths = kept)
         }
 
         // Page pale, crayon a papier, photo de tableau : on redresse le contraste
@@ -53,18 +79,19 @@ object Importer {
         val best = listOfNotNull(local, enhanced)
             .maxByOrNull { ImageEnhancer.score(it.text) }
         if (best != null && !best.looksUnreliable) {
-            return Imported(TextCleanup.clean(best.text), "scan", "local")
+            return Imported(TextCleanup.clean(best.text), "scan", "local", imagePaths = kept)
         }
 
         // Page manuscrite ou photo difficile : bascule cloud si elle est autorisee.
-        if (settings.cloudOcrEnabled && settings.hasGeminiKey) {
-            val cloud = runCatching { GeminiClient(settings.geminiKey).transcribeImage(context, uri) }
+        if (settings.hasGeminiKey && settings.cloudOcrEnabled) {
+            val cloud = runCatching { geminiClient(settings).transcribeImage(context, uri) }
             cloud.getOrNull()?.takeIf { it.isNotBlank() }?.let {
-                return Imported(TextCleanup.clean(it), "scan", "cloud")
+                return Imported(TextCleanup.clean(it), "scan", "cloud", imagePaths = kept)
             }
             return Imported(
                 TextCleanup.clean(best?.text.orEmpty()), "scan", "local",
-                warning = "La lecture assistée a échoué : " + (cloud.exceptionOrNull()?.message ?: "raison inconnue")
+                warning = "La lecture assistée a échoué : " + (cloud.exceptionOrNull()?.message ?: "raison inconnue"),
+                imagePaths = kept
             )
         }
 
@@ -72,11 +99,38 @@ object Importer {
             text = TextCleanup.clean(best?.text.orEmpty()),
             source = "scan",
             engine = "local",
+            imagePaths = kept,
             warning = if (best == null || best.looksUnreliable)
                 "Peu de texte lisible, même après renforcement du contraste. " +
                     "Si la page est manuscrite ou très pâle, active la lecture assistée dans Réglages."
             else null
         )
+    }
+
+    /** Transcription forcee par l'IA, quel que soit le resultat de la lecture locale.
+     *  C'est ce que declenche le bouton « Relire avec l'IA » : sur une page manuscrite,
+     *  la lecture locale renvoie souvent du charabia credible plutot que rien, et
+     *  aucune heuristique ne remplace le jugement de l'utilisatrice. */
+    suspend fun forceCloud(context: Context, imagePaths: List<String>, settings: Settings): String {
+        require(settings.hasGeminiKey) { "Aucune clé IA n'est enregistrée dans les Réglages." }
+        require(imagePaths.isNotEmpty()) { "Les images d'origine ne sont plus disponibles : refais un scan." }
+        val client = geminiClient(settings)
+        val sb = StringBuilder()
+        var missing = 0
+        imagePaths.forEach { path ->
+            val file = java.io.File(path)
+            if (file.exists()) {
+                sb.append(client.transcribeImage(context, Uri.fromFile(file))).append("\n\n")
+            } else {
+                missing++
+            }
+        }
+        val text = TextCleanup.clean(sb.toString())
+        require(text.isNotBlank()) { "Le service IA n'a rien pu lire sur ces pages." }
+        // Une transcription partielle ne doit pas passer pour complete.
+        return if (missing > 0) {
+            "$text\n\n[$missing page(s) d'origine introuvable(s) : elles n'ont pas été relues.]"
+        } else text
     }
 
     /** Relecture de l'image apres passage en noir et blanc a seuil adaptatif. */
@@ -105,7 +159,8 @@ object Importer {
             subject = TextCleanup.guessSubject(text),
             source = imported.source,
             text = text,
-            ocrEngine = imported.engine
+            ocrEngine = imported.engine,
+            imagePaths = imported.imagePaths
         )
     }
 }

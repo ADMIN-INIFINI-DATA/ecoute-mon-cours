@@ -12,8 +12,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -25,6 +27,8 @@ import com.infinidata.ecoutemoncours.ui.theme.Skins
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(settings: Settings, onBack: () -> Unit) {
+    val diag: DiagnosticViewModel = viewModel()
+    val diagState by diag.state.collectAsState()
     var key by remember { mutableStateOf(settings.geminiKey) }
     var cloudOcr by remember { mutableStateOf(settings.cloudOcrEnabled) }
     var highlight by remember { mutableStateOf(settings.highlightEnabled) }
@@ -117,16 +121,61 @@ fun SettingsScreen(settings: Settings, onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = key,
-                onValueChange = { key = it; settings.geminiKey = it.trim() },
+                onValueChange = { key = it },
                 label = { Text("Clé API Gemini") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions.Default,
                 modifier = Modifier.fillMaxWidth()
+                    .onFocusChanged { state ->
+                        // Enregistrement au moment ou l'on quitte le champ : le Keystore
+                        // n'est pas sollicite a chaque caractere tape.
+                        if (!state.isFocused) {
+                            settings.geminiKey = key.trim()
+                            // Saisir une cle vaut activation : sinon la cle ne sert a rien
+                            // et l'on croit la fonction en panne.
+                            if (key.isNotBlank() && !cloudOcr) {
+                                cloudOcr = true
+                                settings.cloudOcrEnabled = true
+                            }
+                        }
+                    }
             )
             Spacer(Modifier.height(8.dp))
-            SwitchRow("Autoriser la lecture assistée des pages illisibles", cloudOcr) {
+            SwitchRow("Relire automatiquement les pages illisibles avec l'IA", cloudOcr) {
                 cloudOcr = it; settings.cloudOcrEnabled = it
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = { settings.geminiKey = key.trim(); diag.test() },
+                    enabled = !diagState.running && key.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) { Text(if (diagState.running) "Test en cours…" else "Tester la connexion IA") }
+                if (settings.aiModel.isNotBlank()) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        settings.aiModel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            diagState.report?.let { report ->
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        report,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))
@@ -136,6 +185,13 @@ fun SettingsScreen(settings: Settings, onBack: () -> Unit) {
                     "sauf si la lecture assistée est activée : dans ce cas, seule la page concernée " +
                     "est transmise au service d'IA choisi, avec ta propre clé.",
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Version " + com.infinidata.ecoutemoncours.BuildConfig.VERSION_NAME +
+                    " (build " + com.infinidata.ecoutemoncours.BuildConfig.VERSION_CODE + ")",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(40.dp))
