@@ -14,6 +14,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.infinidata.ecoutemoncours.ui.dictation.DictationScreen
 import com.infinidata.ecoutemoncours.ui.editor.EditorScreen
 import com.infinidata.ecoutemoncours.ui.library.LibraryScreen
 import com.infinidata.ecoutemoncours.ui.profile.LockScreen
@@ -29,6 +30,7 @@ object Routes {
     const val SEARCH = "search"
     const val EDITOR = "editor"
     const val PROFILE = "profile"
+    const val DICTATION = "dictation"
 }
 
 @Composable
@@ -71,7 +73,8 @@ fun AppRoot(sharedUri: Uri?, onSharedConsumed: () -> Unit) {
                 onSettings = { navController.navigate(Routes.SETTINGS) },
                 onSearch = { navController.navigate(Routes.SEARCH) },
                 onProfile = { navController.navigate(Routes.PROFILE) },
-                onWrite = { navController.navigate("${Routes.EDITOR}/-1") }
+                onWrite = { navController.navigate("${Routes.EDITOR}/-1") },
+                onDictate = { navController.navigate(Routes.DICTATION) }
             )
         }
         composable(
@@ -96,6 +99,15 @@ fun AppRoot(sharedUri: Uri?, onSharedConsumed: () -> Unit) {
                 onSaved = { savedId ->
                     navController.popBackStack()
                     if (id <= 0) navController.navigate("${Routes.READER}/$savedId")
+                }
+            )
+        }
+        composable(Routes.DICTATION) {
+            DictationScreen(
+                onBack = { navController.popBackStack() },
+                onSaved = { id ->
+                    navController.popBackStack()
+                    navController.navigate("${Routes.EDITOR}/$id")
                 }
             )
         }

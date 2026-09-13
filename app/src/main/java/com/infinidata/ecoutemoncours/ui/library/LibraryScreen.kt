@@ -48,7 +48,8 @@ fun LibraryScreen(
     onSettings: () -> Unit,
     onSearch: () -> Unit,
     onProfile: () -> Unit,
-    onWrite: () -> Unit
+    onWrite: () -> Unit,
+    onDictate: () -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -148,7 +149,8 @@ fun LibraryScreen(
                         )
                     },
                     onSearch = onSearch,
-                    onWrite = onWrite
+                    onWrite = onWrite,
+                    onDictate = onDictate
                 )
             }
 
@@ -257,7 +259,8 @@ private fun ImportTiles(
     onPhoto: () -> Unit,
     onFile: () -> Unit,
     onSearch: () -> Unit,
-    onWrite: () -> Unit
+    onWrite: () -> Unit,
+    onDictate: () -> Unit
 ) {
     val skin = LocalSkin.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -286,9 +289,10 @@ private fun ImportTiles(
             SmallTile("📄", "Un fichier", "PDF, Word, texte", Modifier.weight(1f), onFile)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SmallTile("✍️", "Écrire", "Taper ou coller un cours", Modifier.weight(1f), onWrite)
-            SmallTile("🔎", "Chercher", "Par matière et niveau", Modifier.weight(1f), onSearch)
+            SmallTile("🎤", "Dicter", "Parle, ça s'écrit", Modifier.weight(1f), onDictate)
+            SmallTile("✍️", "Écrire", "Taper ou coller", Modifier.weight(1f), onWrite)
         }
+        SmallTile("🔎", "Chercher en ligne", "Par matière et par niveau", Modifier.fillMaxWidth(), onSearch)
     }
 }
 
